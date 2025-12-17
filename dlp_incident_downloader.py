@@ -448,38 +448,69 @@ class DLPIncidentDownloader:
         self.conn_status_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
     def create_report_section(self, parent):
-        """Create the report ID input section"""
-        report_frame = ttk.LabelFrame(parent, text="Saved Report", padding="10")
+        """Create the report ID and incident ID input section"""
+        report_frame = ttk.LabelFrame(parent, text="Incident Source", padding="10")
         report_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         report_frame.columnconfigure(1, weight=1)
 
-        # Report ID
-        ttk.Label(report_frame, text="Report ID:").grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.report_id_entry = ttk.Entry(report_frame, width=20)
-        self.report_id_entry.grid(row=0, column=1, sticky="w")
+        # Source type selection
+        self.source_type_var = tk.StringVar(value="report")
+        source_frame = ttk.Frame(report_frame)
+        source_frame.grid(row=0, column=0, columnspan=7, sticky="w", pady=(0, 10))
+
+        ttk.Radiobutton(source_frame, text="Saved Report", variable=self.source_type_var,
+                       value="report", command=self._on_source_type_change).pack(side="left", padx=(0, 20))
+        ttk.Radiobutton(source_frame, text="Incident IDs", variable=self.source_type_var,
+                       value="incidents", command=self._on_source_type_change).pack(side="left")
+
+        # Report ID row
+        self.report_row_frame = ttk.Frame(report_frame)
+        self.report_row_frame.grid(row=1, column=0, columnspan=7, sticky="ew")
+
+        ttk.Label(self.report_row_frame, text="Report ID:").pack(side="left", padx=(0, 10))
+        self.report_id_entry = ttk.Entry(self.report_row_frame, width=20)
+        self.report_id_entry.pack(side="left")
 
         # Fetch Report button
-        self.fetch_report_btn = ttk.Button(report_frame, text="Fetch Report",
+        self.fetch_report_btn = ttk.Button(self.report_row_frame, text="Fetch Report",
                                            command=self.fetch_report, state="disabled")
-        self.fetch_report_btn.grid(row=0, column=2, padx=(10, 0))
+        self.fetch_report_btn.pack(side="left", padx=(10, 0))
+
+        # Incident IDs row (initially hidden)
+        self.incident_ids_row_frame = ttk.Frame(report_frame)
+
+        ttk.Label(self.incident_ids_row_frame, text="Incident IDs:").pack(side="left", padx=(0, 10))
+        self.incident_ids_entry = ttk.Entry(self.incident_ids_row_frame, width=50)
+        self.incident_ids_entry.pack(side="left")
+        ttk.Label(self.incident_ids_row_frame, text="(comma-separated or ranges: 1,2,3 or 100-200)",
+                 foreground="gray").pack(side="left", padx=(10, 0))
+
+        # Load Incidents button
+        self.load_incidents_btn = ttk.Button(self.incident_ids_row_frame, text="Load Incidents",
+                                             command=self.load_incident_ids, state="disabled")
+        self.load_incidents_btn.pack(side="left", padx=(10, 0))
+
+        # Action buttons row
+        btn_frame = ttk.Frame(report_frame)
+        btn_frame.grid(row=2, column=0, columnspan=7, sticky="w", pady=(10, 0))
 
         # Fetch All Details button
-        self.fetch_details_btn = ttk.Button(report_frame, text="Fetch All Incident Details",
+        self.fetch_details_btn = ttk.Button(btn_frame, text="Fetch All Incident Details",
                                             command=self.fetch_all_incident_details, state="disabled")
-        self.fetch_details_btn.grid(row=0, column=3, padx=(10, 0))
+        self.fetch_details_btn.pack(side="left", padx=(0, 10))
 
         # Test Download button (fetch limited number)
-        self.test_download_btn = ttk.Button(report_frame, text="Test Download",
+        self.test_download_btn = ttk.Button(btn_frame, text="Test Download",
                                             command=self.test_download, state="disabled")
-        self.test_download_btn.grid(row=0, column=4, padx=(10, 0))
+        self.test_download_btn.pack(side="left", padx=(0, 10))
 
         # Stop button
-        self.stop_btn = ttk.Button(report_frame, text="Stop", command=self.stop_fetch, state="disabled")
-        self.stop_btn.grid(row=0, column=5, padx=(10, 0))
+        self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop_fetch, state="disabled")
+        self.stop_btn.pack(side="left", padx=(0, 10))
 
         # Resume button
-        self.resume_btn = ttk.Button(report_frame, text="Resume", command=self.resume_fetch, state="disabled")
-        self.resume_btn.grid(row=0, column=6, padx=(10, 0))
+        self.resume_btn = ttk.Button(btn_frame, text="Resume", command=self.resume_fetch, state="disabled")
+        self.resume_btn.pack(side="left")
 
     def create_progress_section(self, parent):
         """Create the progress indicator section"""
@@ -811,12 +842,87 @@ class DLPIncidentDownloader:
         self.connect_btn.config(text="Disconnect")
         self.conn_status_label.config(text=f"Connected to {self.server_entry.get()}", foreground="green")
         self.fetch_report_btn.config(state="normal")
+        self.load_incidents_btn.config(state="normal")
         self.update_progress(100, "Connected")
         self.log("Successfully connected to Enforce server", "SUCCESS")
 
         # Store environment URL for this session
         env = self.env_var.get()
         self.log(f"Environment: {self.ENVIRONMENTS[env]['name']}")
+
+    def _on_source_type_change(self):
+        """Handle switching between Report and Incident IDs source"""
+        source_type = self.source_type_var.get()
+        if source_type == "report":
+            self.incident_ids_row_frame.grid_forget()
+            self.report_row_frame.grid(row=1, column=0, columnspan=7, sticky="ew")
+        else:
+            self.report_row_frame.grid_forget()
+            self.incident_ids_row_frame.grid(row=1, column=0, columnspan=7, sticky="ew")
+
+    def load_incident_ids(self):
+        """Load incidents from manually entered IDs"""
+        ids_text = self.incident_ids_entry.get().strip()
+        if not ids_text:
+            messagebox.showerror("Error", "Please enter incident IDs")
+            return
+
+        # Parse incident IDs (supports comma-separated and ranges)
+        incident_ids = self._parse_incident_ids(ids_text)
+
+        if not incident_ids:
+            messagebox.showerror("Error", "No valid incident IDs found.\n\nUse comma-separated values (1,2,3) or ranges (100-200)")
+            return
+
+        self.log(f"Loading {len(incident_ids)} incident IDs...")
+
+        # Convert to incident format expected by the rest of the app
+        self.current_incidents = [{"incidentId": id} for id in incident_ids]
+        count = len(self.current_incidents)
+
+        self.log(f"Loaded {count} incident IDs", "SUCCESS")
+        self.incident_count_label.config(text=f"{count} incidents loaded")
+        self.fetch_details_btn.config(state="normal")
+        self.test_download_btn.config(state="normal")
+        self.export_btn.config(state="normal")
+        self.update_progress(100, f"Loaded {count} incidents")
+
+    def _parse_incident_ids(self, ids_text):
+        """Parse incident IDs from text (comma-separated and/or ranges)"""
+        ids = set()
+
+        # Split by comma, semicolon, or whitespace
+        parts = [p.strip() for p in ids_text.replace(';', ',').replace('\n', ',').replace('\t', ',').split(',')]
+
+        for part in parts:
+            if not part:
+                continue
+
+            # Check if it's a range (e.g., 100-200)
+            if '-' in part and not part.startswith('-'):
+                try:
+                    range_parts = part.split('-')
+                    if len(range_parts) == 2:
+                        start = int(range_parts[0].strip())
+                        end = int(range_parts[1].strip())
+                        if start <= end and (end - start) <= 10000:  # Limit range size
+                            for i in range(start, end + 1):
+                                ids.add(i)
+                        else:
+                            self.log(f"Invalid range: {part} (max 10000 IDs per range)", "WARNING")
+                    else:
+                        # Might be a negative number, try parsing as single ID
+                        ids.add(int(part))
+                except ValueError:
+                    self.log(f"Invalid ID or range: {part}", "WARNING")
+            else:
+                # Single ID
+                try:
+                    ids.add(int(part))
+                except ValueError:
+                    self.log(f"Invalid ID: {part}", "WARNING")
+
+        return sorted(list(ids))
 
     def _connection_failed(self, message, is_auth_error=False):
         """Handle failed connection"""
@@ -851,6 +957,7 @@ class DLPIncidentDownloader:
         self.connect_btn.config(text="Connect")
         self.conn_status_label.config(text="Not Connected", foreground="red")
         self.fetch_report_btn.config(state="disabled")
+        self.load_incidents_btn.config(state="disabled")
         self.fetch_details_btn.config(state="disabled")
         self.export_btn.config(state="disabled")
         self.update_progress(0, "Disconnected")
